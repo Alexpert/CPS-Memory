@@ -34,9 +34,9 @@ void mem_init(void* mem, size_t taille)
 	printf("mem at: %ld\n", get_memory_adr() - get_memory_adr());
 	printf("size  : %ld\n", get_memory_size());
 
-	struct fb first_fb = {get_memory_size() - sizeof(struct fb *) + 1, NULL};
-	*(struct fb **)mem = (struct fb *)(mem + sizeof(struct fb *));
-	**(struct fb **)mem = first_fb;
+	struct fb first_fb = {get_memory_size() - sizeof(struct fb *) + 1, NULL}; //Premier bloc libre
+	*(struct fb **)mem = (struct fb *)(mem + sizeof(struct fb *));						//On stock le pointeur du prmier fb à l'adresse mem
+	**(struct fb **)mem = first_fb;																						//ON met le premier bloc à son emplacement en mémoire
 
 	/*
 		[first_fb * | fb -> size | fb ->next| XXXXXXXXXXX ]
@@ -47,13 +47,17 @@ void mem_init(void* mem, size_t taille)
 }
 
 void mem_show(void (*print)(void *, size_t, int)) {
-	void *ptr = (void *)(get_memory_adr() + sizeof(struct fb *));
-	void *ptr_end = get_memory_adr() + get_memory_size();
+	void *ptr = (void *)(get_memory_adr() + sizeof(struct fb *)); //on trouve le pointeur du premier bloc de la mémoire
+	void *ptr_end = get_memory_adr() + get_memory_size();					//on trouve le pointeur de fin de la mémoire (celui après le dernier)
 
+	//précision sur la boucle qui suit: les blocks libre et occupés, désignés par
+	//des (size_t *) se comporte implicitement comme une liste chainée car
+	//pour un block p donnée, p + la taille de son contenu donne le pointeur
+	//du block suivant
 	while (ptr < ptr_end) {
-		print(ptr, *(size_t *)ptr & SIZE_MASK, *(size_t *)ptr & FREE_MASK);
+		// print(ptr, *(size_t *)ptr & SIZE_MASK, *(size_t *)ptr & FREE_MASK);
 		ptr = ptr + (*(size_t *)ptr & SIZE_MASK);
-		printf("ptr = %ld end = %ld\n", ptr - get_memory_adr(), ptr_end - get_memory_adr());
+		// printf("ptr = %ld end = %ld\n", ptr - get_memory_adr(), ptr_end - get_memory_adr());
 	}
 }
 
@@ -63,9 +67,13 @@ void mem_fit(mem_fit_function_t *f) {
 }
 
 size_t get_padding(size_t size, void *ptr_end) {
+	// Concernant le masque:
+	// Soit ALIGN = 16; 16 = 0x0010
+	// ALIGN-1 =  16-1 = 15; 15 = 0x000F
+	// ~(ALIGN - 1) = ~0x000F = 0xFFF0
 	unsigned long int mask = ~(ALIGNMENT - 1);
 	printf("mask %lX\n", mask);
-	void *ptr_start = (void *)((unsigned long int)(ptr_end - size) & mask);
+	void *ptr_start = (void *)((unsigned long int)(ptr_end - size) & mask);	//Alignement sur ALIGN du pointeur
 	size_t padd =  ptr_end - ptr_start - size;
 	printf("padding: %ld\n adress: %ld to %ld\n", padd, ptr_start-get_memory_adr(), ptr_end-get_memory_adr());
 	return padd;
@@ -74,11 +82,12 @@ size_t get_padding(size_t size, void *ptr_end) {
 void *mem_alloc(size_t taille) {
 	/* ... */
 	__attribute__((unused)) /* juste pour que gcc compile ce squelette avec -Werror */
-	struct fb *fb=mem_fit_fn(*(struct fb **)get_memory_adr(), taille);
+	struct fb *fb=mem_fit_fn(*(struct fb **)get_memory_adr(), taille); //On trouve le bloc libre adéquat
 
-	if (fb == NULL)
+	if (fb == NULL) //si aucun bloc n'est libre on return NULL
 		return NULL;
 
+	//On met à jour la taille pour coller à l'alignement. NB: C'est le deuxième appel de cette fct en un allocation, on pourrait sans doute s'en passer
 	taille += get_padding(taille, (void *)fb + (fb->size & SIZE_MASK)) + sizeof(size_t);
 	fb ->size -= taille;
 	*(size_t *)((void *)fb + (fb->size & SIZE_MASK)) = taille;
