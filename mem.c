@@ -154,7 +154,8 @@ size_t mem_get_size(void *zone) {
 
 	/* la valeur retournée doit être la taille maximale que
 	 * l'utilisateur peut utiliser dans cette zone */
-	return 0;
+	zone -= sizeof(size_t);
+	return *(size_t *)zone;
 }
 
 /* Fonctions facultatives
