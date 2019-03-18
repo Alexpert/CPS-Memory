@@ -43,7 +43,7 @@ void mem_init(void* mem, size_t taille)
 		|<- mem     |<- fb									|<- libre
 	*/
 
-	mem_fit(&mem_fit_first);
+	mem_fit(&mem_fit_worst);
 }
 
 void mem_show(void (*print)(void *, size_t, int)) {
@@ -55,9 +55,9 @@ void mem_show(void (*print)(void *, size_t, int)) {
 	//pour un block p donnée, p + la taille de son contenu donne le pointeur
 	//du block suivant
 	while (ptr < ptr_end) {
-		// print(ptr, *(size_t *)ptr & SIZE_MASK, *(size_t *)ptr & FREE_MASK);
+		print(ptr, *(size_t *)ptr & SIZE_MASK, *(size_t *)ptr & FREE_MASK);
 		ptr = ptr + (*(size_t *)ptr & SIZE_MASK);
-		// printf("ptr = %ld end = %ld\n", ptr - get_memory_adr(), ptr_end - get_memory_adr());
+		printf("ptr = %ld end = %ld\n", ptr - get_memory_adr(), ptr_end - get_memory_adr());
 	}
 }
 
@@ -75,7 +75,7 @@ size_t get_padding(size_t size, void *ptr_end) {
 	printf("mask %lX\n", mask);
 	void *ptr_start = (void *)((unsigned long int)(ptr_end - size) & mask);	//Alignement sur ALIGN du pointeur
 	size_t padd =  ptr_end - ptr_start - size;
-	printf("padding: %ld\n adress: %ld to %ld\n", padd, ptr_start-get_memory_adr(), ptr_end-get_memory_adr());
+	printf("padding: %ld\n adress: Ox%lX to Ox%lX\n", padd, ptr_start-get_memory_adr(), ptr_end-get_memory_adr());
 	return padd;
 }
 
@@ -89,6 +89,8 @@ void *mem_alloc(size_t taille) {
 
 	//On met à jour la taille pour coller à l'alignement. NB: C'est le deuxième appel de cette fct en un allocation, on pourrait sans doute s'en passer
 	taille += get_padding(taille, (void *)fb + (fb->size & SIZE_MASK)) + sizeof(size_t);
+	// for(unsigned int i = 0; i < sizeof(struct fb); ++i)
+	// 	printf("%X", *(char *)((char *)fb + i) & 0xFF);
 	fb ->size -= taille;
 	*(size_t *)((void *)fb + (fb->size & SIZE_MASK)) = taille;
 
@@ -97,6 +99,7 @@ void *mem_alloc(size_t taille) {
 
 
 void mem_free(void* mem) {
+	/*
 	struct fb *last_fb = NULL;
 	void *block = (void *)(get_memory_adr() + sizeof(struct fb *));
 	void *ptr_end = get_memory_adr() + get_memory_size();
@@ -125,7 +128,7 @@ void mem_free(void* mem) {
 	} else {
 
 	}
-
+*/
 }
 
 
@@ -162,9 +165,29 @@ size_t mem_get_size(void *zone) {
  * autres stratégies d'allocation
  */
 struct fb* mem_fit_best(struct fb *list, size_t size) {
-	return NULL;
+	int effective_size = 0, effective_size_tmp =(int) get_memory_size();
+	struct fb *fb = list, *fb_tmp = NULL;
+	while (fb != NULL ) {
+		effective_size = size + get_padding(size, (void *)((void *)fb + (fb ->size & SIZE_MASK)));
+		if (fb ->size > effective_size + sizeof(size_t) && effective_size < effective_size_tmp) {
+				effective_size_tmp = effective_size;
+				fb_tmp = fb;
+		}
+		fb = fb ->next;
+	}
+	return fb_tmp;
 }
 
 struct fb* mem_fit_worst(struct fb *list, size_t size) {
-	return NULL;
+	int effective_size = 0, effective_size_tmp =(int) get_memory_size();
+	struct fb *fb = list, *fb_tmp = NULL;
+	while (fb != NULL ) {
+		effective_size = size + get_padding(size, (void *)((void *)fb + (fb ->size & SIZE_MASK)));
+		if (fb ->size > effective_size + sizeof(size_t) && effective_size < effective_size_tmp) {
+				effective_size_tmp = effective_size;
+				fb_tmp = fb;
+		}
+		fb = fb ->next;
+	}
+	return fb_tmp;
 }
