@@ -26,6 +26,20 @@ struct fb {
 };
 
 
+void showFbList() {
+	struct fb *current_fb = *(struct fb **)get_memory_adr();
+	while (current_fb != NULL) {
+		printf("Block Libre de %ld à %ld suivant à: %ld\n",
+			(void *)current_fb - get_memory_adr(), (void *)current_fb + (current_fb->size & SIZE_MASK) - get_memory_adr(), (void *)(current_fb->next)-get_memory_adr());
+		if (current_fb->next <= current_fb) {
+			printf("Boucle detectée ou fin atteinte\n");
+			return;
+		} else {
+			current_fb = current_fb->next;
+		}
+	}
+}
+
 void mem_init(void* mem, size_t taille)
 {
 	assert(mem == get_memory_adr());
@@ -55,9 +69,9 @@ void mem_show(void (*print)(void *, size_t, int)) {
 	//pour un block p donnée, p + la taille de son contenu donne le pointeur
 	//du block suivant
 	while (ptr < ptr_end) {
-		// print(ptr, *(size_t *)ptr & SIZE_MASK, *(size_t *)ptr & FREE_MASK);
+		print(ptr, *(size_t *)ptr & SIZE_MASK, *(size_t *)ptr & FREE_MASK);
 		ptr = ptr + (*(size_t *)ptr & SIZE_MASK);
-		// printf("ptr = %ld end = %ld\n", ptr - get_memory_adr(), ptr_end - get_memory_adr());
+		//printf("ptr = %ld end = %ld\n", ptr - get_memory_adr(), ptr_end - get_memory_adr());
 	}
 }
 
@@ -81,7 +95,6 @@ size_t get_padding(size_t size, void *ptr_end) {
 
 void *mem_alloc(size_t taille) {
 	/* ... */
-	__attribute__((unused)) /* juste pour que gcc compile ce squelette avec -Werror */
 	struct fb *fb=mem_fit_fn(*(struct fb **)get_memory_adr(), taille); //On trouve le bloc libre adéquat
 
 	if (fb == NULL) //si aucun bloc n'est libre on return NULL
@@ -90,42 +103,81 @@ void *mem_alloc(size_t taille) {
 	//On met à jour la taille pour coller à l'alignement. NB: C'est le deuxième appel de cette fct en un allocation, on pourrait sans doute s'en passer
 	taille += get_padding(taille, (void *)fb + (fb->size & SIZE_MASK)) + sizeof(size_t);
 	fb ->size -= taille;
+	if ((fb->size & SIZE_MASK) == 0) { //Le block n'est plus libre du tout (aligné sur 16 il restera tjrs l'entête, il faut s'en débarasser)
+		printf("block rempli\n");
+		struct fb **p_first_fb = (struct fb **)get_memory_adr();
+		//Si le block libre est rempli, on met à jour la liste des block
+		if (*p_first_fb == fb) {
+			printf("premier block\n");
+			*p_first_fb = fb->next;
+		} else {
+			printf("pas premier block\n");
+			struct fb *current_fb = *p_first_fb;
+			while (current_fb->next != fb)
+				current_fb = current_fb->next;
+			current_fb->next = fb->next;
+		}
+		showFbList();
+		*(size_t *)((void *)fb + (fb->size & SIZE_MASK)) = taille;
+		return (void *)fb + sizeof(size_t);
+	}
+	showFbList();
 	*(size_t *)((void *)fb + (fb->size & SIZE_MASK)) = taille;
-
 	return (void *)((void *)fb + (fb->size & SIZE_MASK) + sizeof(size_t));
 }
 
 
 void mem_free(void* mem) {
-	struct fb *last_fb = NULL;
-	void *block = (void *)(get_memory_adr() + sizeof(struct fb *));
-	void *ptr_end = get_memory_adr() + get_memory_size();
+	struct fb *prev_fb = NULL;
+	struct fb *first_fb = *(struct fb **)get_memory_adr();
+	struct fb *newFb;
+	void *block = (size_t *)(get_memory_adr() + sizeof(struct fb *)); //On récupère le premier block
 
-	while (block + sizeof(size_t) < mem && block + sizeof(size_t) < ptr_end) {
-		if (*(size_t *)block & FREE_MASK)
-			last_fb = (struct fb *)block;
-		block = block + (*(size_t *)block & SIZE_MASK);
+	while (block + sizeof(size_t) < mem) {
+		if ((*(size_t *)block) & FREE_MASK) {//On garde trace du dernier bloc libre parcouru
+			prev_fb = (struct fb *)block;
+			printf("block libre à %ld\n", block - get_memory_adr());
+		}
+		block += (*(size_t *)block) & SIZE_MASK;	//On continue jusqu'au bloc suivant
 	}
 
-	if (block + sizeof(size_t) != mem || *(size_t *)block & FREE_MASK)
-		return ;
+	if (block + sizeof(size_t) != mem || (*(size_t *)block) & FREE_MASK)
+		return ; //Si le bon block n'existe pas ou ce block est déjà libre
 
-	if (last_fb != NULL) {
-		if ((void *)last_fb + last_fb ->size == block) {
-			last_fb ->size += *block;
-			return ;
+	if (prev_fb == NULL) { //block sera le premier block libre
+		printf("Premier block libre\n");
+		newFb = (struct fb *)block;
+		if (first_fb != NULL && block + newFb->size == (void *)first_fb) {
+			//le bloc est suivi du premier bloc libre
+			printf("Suivi du premier block");
+			newFb->size += first_fb->size;
+			newFb->next = first_fb->next;
+		} else {
+			//Les bloc n'est pas suivi du premier bloc libre
+			printf("non Suivi du premier block\n");
+			newFb->size += 1; //On indique que le bloc est libre
+			newFb->next = first_fb;
 		}
-
-		if (block + *block == (void *)(last_fb ->next)) {
-			((struct fb *)block) ->next = last_fb ->next ->next;
-			((struct fb *)block) ->size = *block + last_fb ->next ->size;
-			last_fb ->next = (struct fb *)block;
+		*(struct fb **)get_memory_adr() = block;
+	} else { //block n'est pas le premier block libre
+		printf("N'est pas premier block Libre\n");
+		printf("Le précédent finit à: %ld \n", (void *)prev_fb + (prev_fb->size & SIZE_MASK) - get_memory_adr());
+		if ((void *)prev_fb + (prev_fb->size & SIZE_MASK) == block) { //block est précédé d'un block libre
+			prev_fb->size += *(size_t *)block;
+			newFb = prev_fb;
+		} else {	//Sinon on crée un nouveau block
+			newFb = (struct fb *)block;
+			newFb->size += 1;
+			newFb->next = prev_fb->next;
+			prev_fb->next = newFb;
 		}
-
-	} else {
-
+		printf("nouveau block de %ld à %ld\n", (void *)newFb - get_memory_adr(), (void *)newFb + (newFb->size & SIZE_MASK) - get_memory_adr());
+		if ((void *)newFb + (newFb->size & SIZE_MASK) == (void *)newFb->next) { //Si nécessaire, fusion avec le block suivant
+			newFb->size += newFb->next->size - 1;
+			newFb->next = newFb->next->next;
+		}
 	}
-
+	showFbList();
 }
 
 

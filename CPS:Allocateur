@@ -1,0 +1,19 @@
+#CPS: Allocateur Mémoire
+##I. Fonctionement général de l'allocateur
+###1. Initialisation
+L'état de base de la mémoire, celui auquel est initalisé la mémoire est le suivant:
+ - Les 8 premiers octets de la mémoire contiennent l'adresse du premier bloc libre. En l'occurence à l'initialisation, c'est l'adresse 8.
+ - Le premier bloc libre a pour taille initiale toute la mémoire privé de l'entête de la mémoire (les 8 octets décrits plus tôt). Le champ "next" du bloc libre est initialisé à NULL.
+ - On désign la politique de fit.
+ 
+###2. Parcours de tout les blocs
+Pour l'affichage, on doit parcourir tout les blocs dans l'ordre, occupés ou non. On peut traiter les blocs comme un liste implicitement chaînée: pour chaque bloc, son pointeur de début plus sa taille indique l'adresse du bloc suivant. 
+
+On a donc là une solution pour parcourir tout les blocs, encore faut il savoir si ils sont libre ou non. Plusieur solutions sont possibles: 
+ Garder trace du prochain bloc libre et comparer son adresse à celle du bloc parcouru en est une.
+ La solution que nous avons implémenté consiste à enregistrer l'état du bloc dans le bit de poids faible de celui-ci (1 voulant dire libre, 0 non). Les tailles étant systématiquement des multiples de 8, les bits de poids faible des tailles sont toujours à 0. Des masques permettent de déterminer la taille d'un bloc ou si il est occupé.
+ 
+###3. Fonctions de Fit et Padding
+Les fonctions de fit se basent sur un simple parcours de la liste chainée des blocs libres et renvoie selon les fonctions le premier bloc trouvé, le plus grand bloc ou le plus petit. Pour toute les fonctions le bloc retourné doit être assez grand pour y stocker la taille demandée par l'utilisateur et le padding.
+
+Dans cette implémentation, le padding d'un bloc requis pour l'aligner sur 16 octets est situé à la fin. 
